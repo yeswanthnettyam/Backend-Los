@@ -32,10 +32,62 @@ public class RuntimeOrchestrationService {
     /**
      * Process screen submission and determine next screen.
      * This is the main entry point for the runtime API.
+     * 
+     * Supports two modes:
+     * 1. Flow Start (currentScreenId == null): Initializes flow and returns first screen
+     * 2. Screen Progression (currentScreenId != null): Validates, maps, and navigates to next screen
      */
     @Transactional
     public NextScreenResponse processNextScreen(NextScreenRequest request) {
         log.info("Processing next screen for application: {}", request.getApplicationId());
+
+        // Branch based on flow start vs. screen progression
+        if (request.getCurrentScreenId() == null) {
+            return handleFlowStart(request);
+        } else {
+            return handleScreenProgression(request);
+        }
+    }
+
+    /**
+     * Handle flow start: Create application, snapshot flow, return first screen.
+     */
+    private NextScreenResponse handleFlowStart(NextScreenRequest request) {
+        log.info("Handling flow start for flowId={}", request.getFlowId());
+
+        // Create new application
+        LoanApplication application = LoanApplication.builder()
+                .productCode(request.getProductCode())
+                .partnerCode(request.getPartnerCode())
+                .branchCode(request.getBranchCode())
+                .status("INITIATED")
+                .build();
+        application = loanApplicationRepository.save(application);
+
+        // Get start screen from flow and create snapshot
+        String startScreenId = flowEngine.getStartScreen(application, request.getFlowId());
+        
+        // Update application with start screen
+        application.setCurrentScreenId(startScreenId);
+        loanApplicationRepository.save(application);
+
+        // Get screen config for first screen
+        Map<String, Object> screenConfig = flowEngine.getScreenConfig(application, startScreenId);
+
+        // Build response
+        return NextScreenResponse.builder()
+                .applicationId(application.getApplicationId())
+                .nextScreenId(startScreenId)
+                .screenConfig(screenConfig)
+                .status(application.getStatus())
+                .build();
+    }
+
+    /**
+     * Handle screen progression: Validate, map, persist, navigate to next screen.
+     */
+    private NextScreenResponse handleScreenProgression(NextScreenRequest request) {
+        log.info("Handling screen progression from screenId={}", request.getCurrentScreenId());
 
         // Get or create application
         LoanApplication application = getOrCreateApplication(request);

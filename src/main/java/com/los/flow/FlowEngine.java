@@ -11,6 +11,7 @@ import com.los.repository.FlowSnapshotRepository;
 import com.los.repository.ScreenConfigRepository;
 import com.los.repository.ValidationConfigRepository;
 import com.los.repository.FieldMappingConfigRepository;
+import com.los.service.ConfigResolutionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,92 @@ public class FlowEngine {
     private final ScreenConfigRepository screenConfigRepository;
     private final ValidationConfigRepository validationConfigRepository;
     private final FieldMappingConfigRepository fieldMappingConfigRepository;
+    private final ConfigResolutionService configResolutionService;
+
+    /**
+     * Get the start screen for a flow and create snapshot.
+     * Called on flow start (currentScreenId == null).
+     * 
+     * @param application The loan application (must have productCode, partnerCode, branchCode)
+     * @param flowId The flow ID to start
+     * @return The start screen ID from the flow definition
+     */
+    @SuppressWarnings("unchecked")
+    public String getStartScreen(LoanApplication application, String flowId) {
+        log.info("Getting start screen for flowId={}, application={}", flowId, application.getApplicationId());
+
+        // Resolve active flow config
+        FlowConfig flowConfig = configResolutionService.resolveActiveFlowConfig(
+                flowId,
+                application.getProductCode(),
+                application.getPartnerCode(),
+                application.getBranchCode()
+        );
+
+        Map<String, Object> flowDefinition = flowConfig.getFlowDefinition();
+        
+        // Extract start screen from flow definition
+        String startScreenId = (String) flowDefinition.get("startScreen");
+        
+        if (startScreenId == null || startScreenId.isEmpty()) {
+            throw new RuntimeException("Flow definition does not specify a startScreen");
+        }
+
+        log.info("Start screen for flowId={} is: {}", flowId, startScreenId);
+
+        // Create flow snapshot (stores flowId, version, screen configs)
+        createFlowSnapshotForStart(application, flowConfig);
+
+        return startScreenId;
+    }
+
+    /**
+     * Create flow snapshot on flow start.
+     * Stores immutable copy of flow definition and all screen configs.
+     */
+    @SuppressWarnings("unchecked")
+    private void createFlowSnapshotForStart(LoanApplication application, FlowConfig flowConfig) {
+        log.info("Creating flow snapshot for application {} on flow start", application.getApplicationId());
+
+        Map<String, Object> flowDefinition = new HashMap<>(flowConfig.getFlowDefinition());
+
+        // Snapshot all screen configs referenced in flow
+        Map<String, Object> screens = (Map<String, Object>) flowDefinition.get("screens");
+        Map<String, Object> snapshotScreens = new HashMap<>();
+
+        if (screens != null) {
+            for (String screenId : screens.keySet()) {
+                Map<String, Object> screenSnapshot = snapshotScreenConfig(
+                        screenId,
+                        application.getProductCode(),
+                        application.getPartnerCode(),
+                        application.getBranchCode()
+                );
+                snapshotScreens.put(screenId, screenSnapshot);
+            }
+        }
+
+        Map<String, Object> snapshotData = new HashMap<>();
+        snapshotData.put("flowId", flowConfig.getFlowId());
+        snapshotData.put("flowVersion", flowConfig.getVersion());
+        snapshotData.put("flowDefinition", flowDefinition);
+        snapshotData.put("screenConfigs", snapshotScreens);
+
+        // Save snapshot
+        FlowSnapshot snapshot = FlowSnapshot.builder()
+                .applicationId(application.getApplicationId())
+                .flowConfigId(flowConfig.getConfigId())
+                .snapshotData(snapshotData)
+                .build();
+
+        snapshot = flowSnapshotRepository.save(snapshot);
+
+        // Update application with snapshot ID
+        application.setFlowSnapshotId(snapshot.getSnapshotId());
+
+        log.info("Flow snapshot created with ID={} for application={}", 
+                snapshot.getSnapshotId(), application.getApplicationId());
+    }
 
     /**
      * Get the next screen based on current screen and form data.
@@ -75,10 +162,11 @@ public class FlowEngine {
 
     /**
      * Create immutable snapshot of flow and screen configurations.
+     * This is called during screen progression if snapshot doesn't exist yet (legacy path).
      */
     @SuppressWarnings("unchecked")
     private Map<String, Object> createFlowSnapshot(LoanApplication application) {
-        log.info("Creating flow snapshot for application {}", application.getApplicationId());
+        log.info("Creating flow snapshot for application {} (legacy path)", application.getApplicationId());
         
         // Get active flow config
         List<FlowConfig> flowConfigs = flowConfigRepository.findByScope(
@@ -110,6 +198,8 @@ public class FlowEngine {
         }
         
         Map<String, Object> snapshotData = new HashMap<>();
+        snapshotData.put("flowId", flowConfig.getFlowId());
+        snapshotData.put("flowVersion", flowConfig.getVersion());
         snapshotData.put("flowDefinition", flowDefinition);
         snapshotData.put("screenConfigs", snapshotScreens);
         

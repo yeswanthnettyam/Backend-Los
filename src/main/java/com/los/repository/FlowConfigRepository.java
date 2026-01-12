@@ -43,5 +43,32 @@ public interface FlowConfigRepository extends JpaRepository<FlowConfig, Long> {
         String branchCode,
         String status
     );
+
+    /**
+     * Find all ACTIVE flows for dashboard.
+     * Returns all flows matching the scope (product/partner/branch).
+     * Uses scope resolution: branch > partner > product
+     */
+    @Query("""
+        SELECT fc FROM FlowConfig fc 
+        WHERE fc.status = 'ACTIVE'
+        AND (
+            (fc.branchCode = :branchCode AND fc.partnerCode = :partnerCode AND fc.productCode = :productCode)
+            OR (fc.branchCode IS NULL AND fc.partnerCode = :partnerCode AND fc.productCode = :productCode)
+            OR (fc.branchCode IS NULL AND fc.partnerCode IS NULL AND fc.productCode = :productCode)
+        )
+        ORDER BY fc.flowId, fc.branchCode DESC NULLS LAST, fc.partnerCode DESC NULLS LAST
+        """)
+    List<FlowConfig> findAllActiveByScope(
+        @Param("productCode") String productCode,
+        @Param("partnerCode") String partnerCode,
+        @Param("branchCode") String branchCode
+    );
+
+    /**
+     * Find all ACTIVE flows without scope filtering.
+     * Used for testing when productCode/partnerCode not provided.
+     */
+    List<FlowConfig> findByStatus(String status);
 }
 

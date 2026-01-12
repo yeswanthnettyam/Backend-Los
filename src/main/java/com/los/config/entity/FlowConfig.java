@@ -53,6 +53,14 @@ public class FlowConfig {
     @Convert(converter = JsonConverter.class)
     private Map<String, Object> flowDefinition;
 
+    /**
+     * Dashboard metadata for UI rendering.
+     * Contains: title, description, icon
+     */
+    @Column(name = "dashboard_meta", columnDefinition = "TEXT")
+    @Convert(converter = JsonConverter.class)
+    private Map<String, Object> dashboardMeta;
+
     @Column(name = "created_by", length = 100)
     private String createdBy;
 

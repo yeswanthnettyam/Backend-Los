@@ -23,10 +23,16 @@ public class RuntimeController {
 
     private final RuntimeOrchestrationService orchestrationService;
 
-    @Operation(summary = "Process screen submission and get next screen")
+    @Operation(summary = "Process screen submission and get next screen (supports flow start)")
     @PostMapping("/next-screen")
     public ResponseEntity<NextScreenResponse> nextScreen(@Valid @RequestBody NextScreenRequest request) {
-        log.info("Received next-screen request for application: {}", request.getApplicationId());
+        if (request.getCurrentScreenId() == null) {
+            log.info("Flow start request received for flowId={}, productCode={}, partnerCode={}, branchCode={}", 
+                    request.getFlowId(), request.getProductCode(), request.getPartnerCode(), request.getBranchCode());
+        } else {
+            log.info("Screen progression request for application={}, currentScreen={}", 
+                    request.getApplicationId(), request.getCurrentScreenId());
+        }
         
         NextScreenResponse response = orchestrationService.processNextScreen(request);
         
