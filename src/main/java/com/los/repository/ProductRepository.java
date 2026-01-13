@@ -10,5 +10,10 @@ import java.util.List;
 public interface ProductRepository extends JpaRepository<Product, String> {
     
     List<Product> findByIsActive(Boolean isActive);
+    
+    /**
+     * Find all active products ordered by product name.
+     */
+    List<Product> findByIsActiveTrueOrderByProductNameAsc();
 }
 

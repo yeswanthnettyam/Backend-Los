@@ -10,5 +10,10 @@ import java.util.List;
 public interface PartnerRepository extends JpaRepository<Partner, String> {
     
     List<Partner> findByIsActive(Boolean isActive);
+    
+    /**
+     * Find all active partners ordered by partner name.
+     */
+    List<Partner> findByIsActiveTrueOrderByPartnerNameAsc();
 }
 

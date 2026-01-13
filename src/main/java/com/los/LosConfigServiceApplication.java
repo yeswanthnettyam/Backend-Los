@@ -3,6 +3,7 @@ package com.los;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
 /**
@@ -14,9 +15,11 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
  * - Flow Configuration (navigation & decisioning)
  * - Field Mapping Configuration (UI → Domain → DB)
  * - Runtime orchestration for Android & Web
+ * - Master Data (Partners, Products, Branches)
  */
 @SpringBootApplication
 @EnableJpaAuditing
+@EnableCaching
 public class LosConfigServiceApplication {
 
     public static void main(String[] args) {
