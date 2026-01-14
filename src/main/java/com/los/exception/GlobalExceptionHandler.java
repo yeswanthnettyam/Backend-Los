@@ -35,7 +35,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ValidationErrorResponse> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
         String correlationId = CorrelationIdHolder.get();
-        log.warn("[{}] Request validation error", correlationId);
         
         List<ValidationErrorResponse.FieldError> errors = new ArrayList<>();
         ex.getBindingResult().getFieldErrors().forEach(error -> {
@@ -45,6 +44,19 @@ public class GlobalExceptionHandler {
                     .message(error.getDefaultMessage())
                     .build());
         });
+        
+        // Log detailed validation errors
+        if (errors.isEmpty()) {
+            log.warn("[{}] Request validation error (no field errors found). Object: {}", 
+                    correlationId, ex.getBindingResult().getTarget());
+        } else {
+            StringBuilder errorDetails = new StringBuilder();
+            for (ValidationErrorResponse.FieldError error : errors) {
+                errorDetails.append(String.format("\n  - %s: %s", error.getFieldId(), error.getMessage()));
+            }
+            log.warn("[{}] Request validation error. Missing or invalid fields:{}", 
+                    correlationId, errorDetails.toString());
+        }
         
         ValidationErrorResponse response = ValidationErrorResponse.builder()
                 .errors(errors)

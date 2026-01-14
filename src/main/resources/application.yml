@@ -27,7 +27,8 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
-    locations: classpath:db/migration
+    # Support both classpath and filesystem locations for IntelliJ compatibility
+    locations: classpath:db/migration,filesystem:src/main/resources/db/migration
     validate-on-migrate: false
     clean-disabled: true
 

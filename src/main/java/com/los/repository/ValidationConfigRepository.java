@@ -32,8 +32,25 @@ public interface ValidationConfigRepository extends JpaRepository<ValidationConf
     
     Optional<ValidationConfig> findByConfigId(Long configId);
     
+    /**
+     * Find configs by exact scope and status.
+     * Used for activation to find existing ACTIVE configs.
+     * Handles NULL values correctly.
+     */
+    @Query("""
+        SELECT vc FROM ValidationConfig vc 
+        WHERE vc.screenId = :screenId 
+        AND vc.status = :status
+        AND (vc.productCode = :productCode OR (vc.productCode IS NULL AND :productCode IS NULL))
+        AND (vc.partnerCode = :partnerCode OR (vc.partnerCode IS NULL AND :partnerCode IS NULL))
+        AND (vc.branchCode = :branchCode OR (vc.branchCode IS NULL AND :branchCode IS NULL))
+        """)
     List<ValidationConfig> findByScreenIdAndProductCodeAndPartnerCodeAndBranchCodeAndStatus(
-        String screenId, String productCode, String partnerCode, String branchCode, String status
+        @Param("screenId") String screenId,
+        @Param("productCode") String productCode,
+        @Param("partnerCode") String partnerCode,
+        @Param("branchCode") String branchCode,
+        @Param("status") String status
     );
     
     List<ValidationConfig> findByScreenIdAndStatus(String screenId, String status);

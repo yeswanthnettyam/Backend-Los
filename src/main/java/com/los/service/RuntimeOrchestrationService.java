@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -92,6 +93,13 @@ public class RuntimeOrchestrationService {
         // Get or create application
         LoanApplication application = getOrCreateApplication(request);
 
+        // Handle null/empty formData (use empty map as default)
+        Map<String, Object> formData = request.getFormData();
+        if (formData == null) {
+            formData = new HashMap<>();
+            log.debug("Form data is null, using empty map");
+        }
+
         // Get validation config
         Map<String, Object> validationConfig = configResolutionService.getValidationConfig(
                 request.getCurrentScreenId(),
@@ -102,7 +110,7 @@ public class RuntimeOrchestrationService {
 
         // Step 1: Validate form data
         log.debug("Validating form data for screen: {}", request.getCurrentScreenId());
-        validationEngine.validate(request.getFormData(), validationConfig);
+        validationEngine.validate(formData, validationConfig);
 
         // Step 2: Apply field mappings and persist
         log.debug("Applying field mappings");
@@ -112,11 +120,11 @@ public class RuntimeOrchestrationService {
                 application.getPartnerCode(),
                 application.getBranchCode()
         );
-        fieldMappingEngine.applyMappings(application.getApplicationId(), request.getFormData(), mappingConfig);
+        fieldMappingEngine.applyMappings(application.getApplicationId(), formData, mappingConfig);
 
         // Step 3: Determine next screen
         log.debug("Determining next screen");
-        String nextScreenId = flowEngine.getNextScreen(application, request.getCurrentScreenId(), request.getFormData());
+        String nextScreenId = flowEngine.getNextScreen(application, request.getCurrentScreenId(), formData);
 
         // Update application status
         if (nextScreenId != null) {

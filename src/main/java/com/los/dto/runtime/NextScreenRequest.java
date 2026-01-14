@@ -31,20 +31,29 @@ public class NextScreenRequest {
      */
     private String currentScreenId;
 
-    @NotNull(message = "Form data is required")
+    /**
+     * Form data submitted from the current screen.
+     * Can be null or empty for flow start (first screen has no data yet).
+     * Required for screen progression (validation and field mapping).
+     */
     private Map<String, Object> formData;
 
     /**
-     * Flow ID is required for flow start.
-     * Used to resolve the correct flow configuration.
+     * Flow ID is required for flow start (when currentScreenId is null).
+     * For screen progression, can be retrieved from application's flow snapshot.
      */
-    @NotBlank(message = "Flow ID is required")
     private String flowId;
 
-    @NotBlank(message = "Product code is required")
+    /**
+     * Product code is required for flow start (when currentScreenId is null).
+     * For screen progression, can be retrieved from application entity.
+     */
     private String productCode;
 
-    @NotBlank(message = "Partner code is required")
+    /**
+     * Partner code is required for flow start (when currentScreenId is null).
+     * For screen progression, can be retrieved from application entity.
+     */
     private String partnerCode;
 
     private String branchCode;

@@ -35,13 +35,22 @@ public interface FieldMappingConfigRepository extends JpaRepository<FieldMapping
     /**
      * Find configs by exact scope and status.
      * Used for activation to find existing ACTIVE configs.
+     * Handles NULL values correctly.
      */
+    @Query("""
+        SELECT fmc FROM FieldMappingConfig fmc 
+        WHERE fmc.screenId = :screenId 
+        AND fmc.status = :status
+        AND (fmc.productCode = :productCode OR (fmc.productCode IS NULL AND :productCode IS NULL))
+        AND (fmc.partnerCode = :partnerCode OR (fmc.partnerCode IS NULL AND :partnerCode IS NULL))
+        AND (fmc.branchCode = :branchCode OR (fmc.branchCode IS NULL AND :branchCode IS NULL))
+        """)
     List<FieldMappingConfig> findByScreenIdAndProductCodeAndPartnerCodeAndBranchCodeAndStatus(
-        String screenId,
-        String productCode,
-        String partnerCode,
-        String branchCode,
-        String status
+        @Param("screenId") String screenId,
+        @Param("productCode") String productCode,
+        @Param("partnerCode") String partnerCode,
+        @Param("branchCode") String branchCode,
+        @Param("status") String status
     );
 }
 

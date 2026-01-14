@@ -35,13 +35,22 @@ public interface FlowConfigRepository extends JpaRepository<FlowConfig, Long> {
     /**
      * Find configs by exact scope and status.
      * Used for activation to find existing ACTIVE configs.
+     * Handles NULL values correctly.
      */
+    @Query("""
+        SELECT fc FROM FlowConfig fc 
+        WHERE fc.flowId = :flowId 
+        AND fc.status = :status
+        AND (fc.productCode = :productCode OR (fc.productCode IS NULL AND :productCode IS NULL))
+        AND (fc.partnerCode = :partnerCode OR (fc.partnerCode IS NULL AND :partnerCode IS NULL))
+        AND (fc.branchCode = :branchCode OR (fc.branchCode IS NULL AND :branchCode IS NULL))
+        """)
     List<FlowConfig> findByFlowIdAndProductCodeAndPartnerCodeAndBranchCodeAndStatus(
-        String flowId,
-        String productCode,
-        String partnerCode,
-        String branchCode,
-        String status
+        @Param("flowId") String flowId,
+        @Param("productCode") String productCode,
+        @Param("partnerCode") String partnerCode,
+        @Param("branchCode") String branchCode,
+        @Param("status") String status
     );
 
     /**

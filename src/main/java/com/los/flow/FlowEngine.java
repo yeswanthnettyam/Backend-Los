@@ -81,20 +81,34 @@ public class FlowEngine {
 
         Map<String, Object> flowDefinition = new HashMap<>(flowConfig.getFlowDefinition());
 
+        // Get start screen ID - it must be included in snapshot
+        String startScreenId = (String) flowDefinition.get("startScreen");
+        
         // Snapshot all screen configs referenced in flow
-        Map<String, Object> screens = (Map<String, Object>) flowDefinition.get("screens");
+        // Handle both Map and List formats for screens
+        Object screensObj = flowDefinition.get("screens");
         Map<String, Object> snapshotScreens = new HashMap<>();
+        
+        // Always include the start screen in snapshot
+        Set<String> screenIdsToSnapshot = new HashSet<>();
+        if (startScreenId != null && !startScreenId.isEmpty()) {
+            screenIdsToSnapshot.add(startScreenId);
+        }
 
-        if (screens != null) {
-            for (String screenId : screens.keySet()) {
-                Map<String, Object> screenSnapshot = snapshotScreenConfig(
-                        screenId,
-                        application.getProductCode(),
-                        application.getPartnerCode(),
-                        application.getBranchCode()
-                );
-                snapshotScreens.put(screenId, screenSnapshot);
-            }
+        if (screensObj != null) {
+            Set<String> screenIds = extractScreenIds(screensObj);
+            screenIdsToSnapshot.addAll(screenIds);
+        }
+        
+        // Snapshot all screens (including start screen)
+        for (String screenId : screenIdsToSnapshot) {
+            Map<String, Object> screenSnapshot = snapshotScreenConfig(
+                    screenId,
+                    application.getProductCode(),
+                    application.getPartnerCode(),
+                    application.getBranchCode()
+            );
+            snapshotScreens.put(screenId, screenSnapshot);
         }
 
         Map<String, Object> snapshotData = new HashMap<>();
@@ -130,12 +144,12 @@ public class FlowEngine {
         Map<String, Object> flowDefinition = getFlowDefinition(application);
         
         // Find current screen in flow
-        Map<String, Object> screens = (Map<String, Object>) flowDefinition.get("screens");
-        Map<String, Object> currentScreen = (Map<String, Object>) screens.get(currentScreenId);
+        Object screensObj = flowDefinition.get("screens");
+        Map<String, Object> currentScreen = findScreenInFlow(screensObj, currentScreenId);
         
         if (currentScreen == null) {
             log.error("Screen {} not found in flow", currentScreenId);
-            throw new RuntimeException("Screen not found in flow");
+            throw new RuntimeException("Screen not found in flow: " + currentScreenId);
         }
         
         // Evaluate next screen based on conditions
@@ -184,17 +198,21 @@ public class FlowEngine {
         Map<String, Object> flowDefinition = new HashMap<>(flowConfig.getFlowDefinition());
         
         // Snapshot all screen configs referenced in flow
-        Map<String, Object> screens = (Map<String, Object>) flowDefinition.get("screens");
+        Object screensObj = flowDefinition.get("screens");
         Map<String, Object> snapshotScreens = new HashMap<>();
         
-        for (String screenId : screens.keySet()) {
-            Map<String, Object> screenSnapshot = snapshotScreenConfig(
-                    screenId,
-                    application.getProductCode(),
-                    application.getPartnerCode(),
-                    application.getBranchCode()
-            );
-            snapshotScreens.put(screenId, screenSnapshot);
+        if (screensObj != null) {
+            Set<String> screenIds = extractScreenIds(screensObj);
+            
+            for (String screenId : screenIds) {
+                Map<String, Object> screenSnapshot = snapshotScreenConfig(
+                        screenId,
+                        application.getProductCode(),
+                        application.getPartnerCode(),
+                        application.getBranchCode()
+                );
+                snapshotScreens.put(screenId, screenSnapshot);
+            }
         }
         
         Map<String, Object> snapshotData = new HashMap<>();
@@ -216,6 +234,37 @@ public class FlowEngine {
         application.setFlowSnapshotId(snapshot.getSnapshotId());
         
         return flowDefinition;
+    }
+
+    /**
+     * Extract screen IDs from screens object (handles both Map and List formats).
+     */
+    @SuppressWarnings("unchecked")
+    private Set<String> extractScreenIds(Object screensObj) {
+        Set<String> screenIds = new HashSet<>();
+        
+        if (screensObj instanceof Map) {
+            // Format: {"screen1": {...}, "screen2": {...}}
+            Map<String, Object> screens = (Map<String, Object>) screensObj;
+            screenIds.addAll(screens.keySet());
+        } else if (screensObj instanceof List) {
+            // Format: [{"id": "screen1", ...}, {"id": "screen2", ...}]
+            List<Object> screens = (List<Object>) screensObj;
+            for (Object screenObj : screens) {
+                if (screenObj instanceof Map) {
+                    Map<String, Object> screen = (Map<String, Object>) screenObj;
+                    String screenId = (String) screen.get("id");
+                    if (screenId != null) {
+                        screenIds.add(screenId);
+                    }
+                } else if (screenObj instanceof String) {
+                    // Format: ["screen1", "screen2"]
+                    screenIds.add((String) screenObj);
+                }
+            }
+        }
+        
+        return screenIds;
     }
 
     /**
@@ -243,6 +292,36 @@ public class FlowEngine {
         }
         
         return snapshot;
+    }
+
+    /**
+     * Find a screen in the flow definition (handles both Map and List formats).
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findScreenInFlow(Object screensObj, String screenId) {
+        if (screensObj == null) {
+            return null;
+        }
+        
+        if (screensObj instanceof Map) {
+            // Format: {"screen1": {...}, "screen2": {...}}
+            Map<String, Object> screens = (Map<String, Object>) screensObj;
+            return (Map<String, Object>) screens.get(screenId);
+        } else if (screensObj instanceof List) {
+            // Format: [{"id": "screen1", ...}, {"id": "screen2", ...}]
+            List<Object> screens = (List<Object>) screensObj;
+            for (Object screenObj : screens) {
+                if (screenObj instanceof Map) {
+                    Map<String, Object> screen = (Map<String, Object>) screenObj;
+                    String id = (String) screen.get("id");
+                    if (screenId.equals(id)) {
+                        return screen;
+                    }
+                }
+            }
+        }
+        
+        return null;
     }
 
     /**
