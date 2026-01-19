@@ -128,33 +128,47 @@ public class RuntimeOrchestrationService {
         fieldMappingEngine.applyMappings(application.getApplicationId(), formData, mappingConfig);
 
         // Step 3: Determine next screen
-        log.debug("Determining next screen");
+        log.info("Determining next screen for application={}, currentScreenId={}, formData keys={}", 
+                application.getApplicationId(), request.getCurrentScreenId(), 
+                formData != null ? formData.keySet() : "null");
         // Pass flowId to getNextScreen so it can create snapshot if needed
         String nextScreenId = flowEngine.getNextScreen(application, request.getCurrentScreenId(), formData, request.getFlowId());
+        log.info("Next screen determined: {} (from currentScreen: {})", nextScreenId, request.getCurrentScreenId());
 
         // Update application status
         if (nextScreenId != null) {
             application.setCurrentScreenId(nextScreenId);
             application.setStatus("IN_PROGRESS");
+            log.info("Updated application {}: currentScreenId={}, status=IN_PROGRESS", 
+                    application.getApplicationId(), nextScreenId);
         } else {
             // End of flow
             application.setStatus("COMPLETED");
+            log.info("Flow ended for application {}. Status set to COMPLETED", application.getApplicationId());
         }
         loanApplicationRepository.save(application);
 
         // Step 4: Get next screen config
         Map<String, Object> screenConfig = null;
         if (nextScreenId != null) {
+            log.info("Getting screen config for nextScreenId: {}", nextScreenId);
             screenConfig = flowEngine.getScreenConfig(application, nextScreenId);
+            log.info("Retrieved screen config for {}: screenId={}", 
+                    nextScreenId, screenConfig != null ? screenConfig.get("screenId") : "null");
         }
 
         // Build response
-        return NextScreenResponse.builder()
+        NextScreenResponse response = NextScreenResponse.builder()
                 .applicationId(application.getApplicationId())
                 .nextScreenId(nextScreenId)
                 .screenConfig(screenConfig)
                 .status(application.getStatus())
                 .build();
+        
+        log.info("Returning response: applicationId={}, nextScreenId={}, status={}", 
+                response.getApplicationId(), response.getNextScreenId(), response.getStatus());
+        
+        return response;
     }
 
     /**

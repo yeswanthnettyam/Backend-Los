@@ -208,7 +208,11 @@ public class FlowEngine {
         }
         
         // Evaluate next screen based on conditions
-        return evaluateNextScreen(currentScreen, formData);
+        log.debug("Evaluating next screen for currentScreenId={}, formData keys: {}", 
+                currentScreenId, formData != null ? formData.keySet() : "null");
+        String nextScreen = evaluateNextScreen(currentScreen, formData);
+        log.info("Next screen determined: {} (from currentScreen: {})", nextScreen, currentScreenId);
+        return nextScreen;
     }
 
     /**
@@ -438,9 +442,12 @@ public class FlowEngine {
      */
     @SuppressWarnings("unchecked")
     private String evaluateNextScreen(Map<String, Object> currentScreen, Map<String, Object> formData) {
+        log.debug("Evaluating next screen. Current screen keys: {}, formData: {}", 
+                currentScreen.keySet(), formData);
         
         // Check for conditions array first (if present, evaluate them)
         Object conditionsObj = currentScreen.get("conditions");
+        log.debug("Conditions object: {}", conditionsObj);
         if (conditionsObj instanceof List) {
             List<Map<String, Object>> conditions = (List<Map<String, Object>>) conditionsObj;
             for (Map<String, Object> condition : conditions) {
@@ -450,16 +457,25 @@ public class FlowEngine {
                 Map<String, Object> ifCondition = (Map<String, Object>) condition.get("if");
                 if (ifCondition != null) {
                     // Format 1: Extract condition from "if" block
-                    if (evaluateConditionFromIf(ifCondition, formData)) {
+                    boolean conditionMatched = evaluateConditionFromIf(ifCondition, formData);
+                    log.debug("Condition evaluation result: {} (ifCondition: {}, formData: {})", 
+                            conditionMatched, ifCondition, formData);
+                    if (conditionMatched) {
                         // Condition matched - get the nextScreen from "then" block
                         Object thenObj = condition.get("then");
                         if (thenObj instanceof Map) {
                             Map<String, Object> then = (Map<String, Object>) thenObj;
                             String nextScreen = (String) then.get("nextScreen");
+                            log.debug("Condition matched. nextScreen from 'then': '{}'", nextScreen);
                             if (nextScreen != null && !nextScreen.isEmpty() && !"__FLOW_END__".equals(nextScreen)) {
+                                log.info("Returning nextScreen from condition: {}", nextScreen);
                                 return nextScreen;
                             } else if ("__FLOW_END__".equals(nextScreen)) {
+                                log.info("Flow end marker in condition, returning null");
                                 return null; // End of flow
+                            } else if (nextScreen != null && nextScreen.isEmpty()) {
+                                log.warn("Empty nextScreen in condition 'then' block - falling back to defaultNext");
+                                // Empty string - fall through to defaultNext
                             }
                         }
                     }
@@ -482,13 +498,18 @@ public class FlowEngine {
         Object nextObj = currentScreen.get("next");
         if (nextObj == null) {
             nextObj = currentScreen.get("defaultNext");
+            log.debug("Using defaultNext field (next was null). defaultNext: {}", nextObj);
+        } else {
+            log.debug("Using next field: {}", nextObj);
         }
         
         if (nextObj instanceof String) {
             // Simple next screen
             String nextScreen = (String) nextObj;
+            log.debug("Next screen from defaultNext/next field: {}", nextScreen);
             // Handle special end-of-flow marker
             if ("__FLOW_END__".equals(nextScreen)) {
+                log.info("Flow end marker detected, returning null");
                 return null;
             }
             return nextScreen;
