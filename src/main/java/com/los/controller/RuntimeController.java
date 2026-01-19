@@ -62,16 +62,10 @@ public class RuntimeController {
             log.info("Flow start request received for flowId={}, productCode={}, partnerCode={}, branchCode={}", 
                     request.getFlowId(), request.getProductCode(), request.getPartnerCode(), request.getBranchCode());
         } else {
-            // Screen progression requires applicationId and currentScreenId
+            // Screen progression requires currentScreenId
+            // applicationId is optional - will be looked up if null (for first screen submission)
             java.util.List<com.los.dto.runtime.ValidationErrorResponse.FieldError> errors = new java.util.ArrayList<>();
             
-            if (request.getApplicationId() == null) {
-                errors.add(com.los.dto.runtime.ValidationErrorResponse.FieldError.builder()
-                        .fieldId("applicationId")
-                        .code("REQUIRED")
-                        .message("Application ID is required for screen progression")
-                        .build());
-            }
             if (request.getCurrentScreenId() == null || request.getCurrentScreenId().isBlank()) {
                 errors.add(com.los.dto.runtime.ValidationErrorResponse.FieldError.builder()
                         .fieldId("currentScreenId")
@@ -84,8 +78,9 @@ public class RuntimeController {
                 throw new com.los.exception.ValidationException(errors);
             }
             
-            log.info("Screen progression request for application={}, currentScreen={}", 
-                    request.getApplicationId(), request.getCurrentScreenId());
+            log.info("Screen progression request for application={}, currentScreen={}, flowId={}, productCode={}, partnerCode={}", 
+                    request.getApplicationId(), request.getCurrentScreenId(), 
+                    request.getFlowId(), request.getProductCode(), request.getPartnerCode());
         }
         
         NextScreenResponse response = orchestrationService.processNextScreen(request);

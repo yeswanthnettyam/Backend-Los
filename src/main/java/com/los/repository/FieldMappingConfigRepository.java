@@ -17,11 +17,18 @@ public interface FieldMappingConfigRepository extends JpaRepository<FieldMapping
         WHERE fmc.screenId = :screenId 
         AND fmc.status = 'ACTIVE'
         AND (
-            (fmc.branchCode = :branchCode AND fmc.partnerCode = :partnerCode AND fmc.productCode = :productCode)
-            OR (fmc.branchCode IS NULL AND fmc.partnerCode = :partnerCode AND fmc.productCode = :productCode)
-            OR (fmc.branchCode IS NULL AND fmc.partnerCode IS NULL AND fmc.productCode = :productCode)
+            ((fmc.branchCode = :branchCode) OR (fmc.branchCode IS NULL AND :branchCode IS NULL))
+            AND ((fmc.partnerCode = :partnerCode) OR (fmc.partnerCode IS NULL AND :partnerCode IS NULL))
+            AND ((fmc.productCode = :productCode) OR (fmc.productCode IS NULL AND :productCode IS NULL))
+            OR (fmc.branchCode IS NULL 
+                AND ((fmc.partnerCode = :partnerCode) OR (fmc.partnerCode IS NULL AND :partnerCode IS NULL))
+                AND ((fmc.productCode = :productCode) OR (fmc.productCode IS NULL AND :productCode IS NULL)))
+            OR (fmc.branchCode IS NULL 
+                AND fmc.partnerCode IS NULL 
+                AND ((fmc.productCode = :productCode) OR (fmc.productCode IS NULL AND :productCode IS NULL)))
+            OR (fmc.branchCode IS NULL AND fmc.partnerCode IS NULL AND fmc.productCode IS NULL)
         )
-        ORDER BY fmc.branchCode DESC NULLS LAST, fmc.partnerCode DESC NULLS LAST
+        ORDER BY fmc.branchCode DESC NULLS LAST, fmc.partnerCode DESC NULLS LAST, fmc.productCode DESC NULLS LAST
         """)
     List<FieldMappingConfig> findByScope(
         @Param("screenId") String screenId,

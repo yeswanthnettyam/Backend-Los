@@ -22,19 +22,26 @@ public class ValidationEngine {
 
     /**
      * Validates form data against validation configuration.
+     * If validationConfig is null or empty, validation is skipped (no errors thrown).
      * 
      * @param formData The form data to validate
-     * @param validationConfig The validation rules configuration
+     * @param validationConfig The validation rules configuration (can be null)
      * @throws ValidationException if validation fails
      */
     @SuppressWarnings("unchecked")
     public void validate(Map<String, Object> formData, Map<String, Object> validationConfig) {
+        // Skip validation if config is null or empty
+        if (validationConfig == null || validationConfig.isEmpty()) {
+            log.debug("Validation config is null or empty. Skipping validation.");
+            return;
+        }
+
         List<ValidationErrorResponse.FieldError> errors = new ArrayList<>();
 
         // Extract fields validation rules
         Map<String, Object> fields = (Map<String, Object>) validationConfig.get("fields");
-        if (fields == null) {
-            log.warn("No fields defined in validation config");
+        if (fields == null || fields.isEmpty()) {
+            log.debug("No fields defined in validation config. Skipping validation.");
             return;
         }
 

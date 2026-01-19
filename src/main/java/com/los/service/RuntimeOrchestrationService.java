@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Main orchestration service for runtime API.
@@ -100,7 +101,7 @@ public class RuntimeOrchestrationService {
             log.debug("Form data is null, using empty map");
         }
 
-        // Get validation config
+        // Get validation config (may be null if not configured)
         Map<String, Object> validationConfig = configResolutionService.getValidationConfig(
                 request.getCurrentScreenId(),
                 application.getProductCode(),
@@ -108,9 +109,13 @@ public class RuntimeOrchestrationService {
                 application.getBranchCode()
         );
 
-        // Step 1: Validate form data
-        log.debug("Validating form data for screen: {}", request.getCurrentScreenId());
-        validationEngine.validate(formData, validationConfig);
+        // Step 1: Validate form data (skipped if validationConfig is null)
+        if (validationConfig != null) {
+            log.debug("Validating form data for screen: {}", request.getCurrentScreenId());
+            validationEngine.validate(formData, validationConfig);
+        } else {
+            log.debug("No validation config found for screen: {}. Skipping validation.", request.getCurrentScreenId());
+        }
 
         // Step 2: Apply field mappings and persist
         log.debug("Applying field mappings");
@@ -124,7 +129,8 @@ public class RuntimeOrchestrationService {
 
         // Step 3: Determine next screen
         log.debug("Determining next screen");
-        String nextScreenId = flowEngine.getNextScreen(application, request.getCurrentScreenId(), formData);
+        // Pass flowId to getNextScreen so it can create snapshot if needed
+        String nextScreenId = flowEngine.getNextScreen(application, request.getCurrentScreenId(), formData, request.getFlowId());
 
         // Update application status
         if (nextScreenId != null) {
@@ -153,14 +159,52 @@ public class RuntimeOrchestrationService {
 
     /**
      * Get existing application or create new one.
+     * 
+     * When applicationId is null (e.g., first screen submission after flow start),
+     * attempts to find the application created during flow start by matching:
+     * - productCode, partnerCode, branchCode, and currentScreenId
+     * 
+     * If not found, creates a new application (fallback for edge cases).
      */
     private LoanApplication getOrCreateApplication(NextScreenRequest request) {
         if (request.getApplicationId() != null) {
             return loanApplicationRepository.findById(request.getApplicationId())
-                    .orElseThrow(() -> new RuntimeException("Application not found"));
+                    .orElseThrow(() -> new RuntimeException("Application not found: " + request.getApplicationId()));
         }
 
-        // Create new application
+        // applicationId is null - try to find existing application from flow start
+        // This happens when frontend submits first screen but didn't capture applicationId
+        log.debug("Application ID is null, attempting to find existing application for first screen submission");
+        
+        Optional<LoanApplication> existingApplication;
+        
+        if (request.getBranchCode() != null && !request.getBranchCode().isBlank()) {
+            existingApplication = loanApplicationRepository.findFirstByProductCodeAndPartnerCodeAndBranchCodeAndCurrentScreenIdOrderByCreatedAtDesc(
+                    request.getProductCode(),
+                    request.getPartnerCode(),
+                    request.getBranchCode(),
+                    request.getCurrentScreenId()
+            );
+        } else {
+            existingApplication = loanApplicationRepository.findFirstByProductCodeAndPartnerCodeAndCurrentScreenIdOrderByCreatedAtDesc(
+                    request.getProductCode(),
+                    request.getPartnerCode(),
+                    request.getCurrentScreenId()
+            );
+        }
+        
+        if (existingApplication.isPresent()) {
+            LoanApplication app = existingApplication.get();
+            log.info("Found existing application ID={} for first screen submission (productCode={}, partnerCode={}, currentScreenId={})",
+                    app.getApplicationId(), request.getProductCode(), request.getPartnerCode(), request.getCurrentScreenId());
+            return app;
+        }
+        
+        // Not found - this shouldn't happen in normal flow, but create new as fallback
+        log.warn("Could not find existing application for first screen submission. Creating new application (productCode={}, partnerCode={}, currentScreenId={}). " +
+                "This may indicate the frontend didn't capture applicationId from flow start response.",
+                request.getProductCode(), request.getPartnerCode(), request.getCurrentScreenId());
+        
         LoanApplication application = LoanApplication.builder()
                 .productCode(request.getProductCode())
                 .partnerCode(request.getPartnerCode())

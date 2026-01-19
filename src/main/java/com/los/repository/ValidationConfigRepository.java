@@ -20,8 +20,9 @@ public interface ValidationConfigRepository extends JpaRepository<ValidationConf
             (vc.branchCode = :branchCode AND vc.partnerCode = :partnerCode AND vc.productCode = :productCode)
             OR (vc.branchCode IS NULL AND vc.partnerCode = :partnerCode AND vc.productCode = :productCode)
             OR (vc.branchCode IS NULL AND vc.partnerCode IS NULL AND vc.productCode = :productCode)
+            OR (vc.branchCode IS NULL AND vc.partnerCode IS NULL AND vc.productCode IS NULL)
         )
-        ORDER BY vc.branchCode DESC NULLS LAST, vc.partnerCode DESC NULLS LAST
+        ORDER BY vc.branchCode DESC NULLS LAST, vc.partnerCode DESC NULLS LAST, vc.productCode DESC NULLS LAST
         """)
     List<ValidationConfig> findByScope(
         @Param("screenId") String screenId,

@@ -22,8 +22,9 @@ public interface ScreenConfigRepository extends JpaRepository<ScreenConfig, Long
             (sc.branchCode = :branchCode AND sc.partnerCode = :partnerCode AND sc.productCode = :productCode)
             OR (sc.branchCode IS NULL AND sc.partnerCode = :partnerCode AND sc.productCode = :productCode)
             OR (sc.branchCode IS NULL AND sc.partnerCode IS NULL AND sc.productCode = :productCode)
+            OR (sc.branchCode IS NULL AND sc.partnerCode IS NULL AND sc.productCode IS NULL)
         )
-        ORDER BY sc.branchCode DESC NULLS LAST, sc.partnerCode DESC NULLS LAST
+        ORDER BY sc.branchCode DESC NULLS LAST, sc.partnerCode DESC NULLS LAST, sc.productCode DESC NULLS LAST
         """)
     List<ScreenConfig> findByScope(
         @Param("screenId") String screenId,

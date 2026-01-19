@@ -59,6 +59,14 @@ public class ConfigResolutionService {
      * @return ScreenConfig entity (ACTIVE status only)
      */
     public ScreenConfig resolveActiveScreenConfig(String screenId, String productCode, String partnerCode, String branchCode) {
+        if (screenId == null || screenId.isBlank()) {
+            throw new IllegalArgumentException("screenId cannot be null or blank");
+        }
+        // Normalize empty strings to null for scope parameters
+        productCode = (productCode != null && productCode.isBlank()) ? null : productCode;
+        partnerCode = (partnerCode != null && partnerCode.isBlank()) ? null : partnerCode;
+        branchCode = (branchCode != null && branchCode.isBlank()) ? null : branchCode;
+        
         List<ScreenConfig> configs = screenConfigRepository.findByScope(screenId, productCode, partnerCode, branchCode);
         
         if (configs.isEmpty()) {
@@ -81,15 +89,38 @@ public class ConfigResolutionService {
 
     /**
      * Resolve validation config using scope resolution logic.
+     * Returns null if no validation config is found (validation will be skipped).
+     * 
+     * @return Validation rules map, or null if not found
      */
     public Map<String, Object> getValidationConfig(String screenId, String productCode, String partnerCode, String branchCode) {
+        if (screenId == null || screenId.isBlank()) {
+            log.warn("screenId is null or blank, cannot resolve validation config");
+            return null;
+        }
+        // Normalize empty strings to null for scope parameters
+        productCode = (productCode != null && productCode.isBlank()) ? null : productCode;
+        partnerCode = (partnerCode != null && partnerCode.isBlank()) ? null : partnerCode;
+        branchCode = (branchCode != null && branchCode.isBlank()) ? null : branchCode;
+        
         List<ValidationConfig> configs = validationConfigRepository.findByScope(screenId, productCode, partnerCode, branchCode);
         
         if (configs.isEmpty()) {
-            throw new ConfigNotFoundException("Validation config not found for: " + screenId);
+            log.debug("No validation config found for screenId={}, scope={}/{}/{}. Validation will be skipped.", 
+                    screenId, productCode, partnerCode, branchCode);
+            return null;
         }
         
-        return configs.get(0).getValidationRules();
+        ValidationConfig config = configs.get(0);
+        
+        // Only return ACTIVE configs
+        if (!ConfigStatus.isRuntimeUsable(config.getStatus())) {
+            log.debug("Validation config found but not ACTIVE (status={}) for screenId={}. Validation will be skipped.", 
+                    config.getStatus(), screenId);
+            return null;
+        }
+        
+        return config.getValidationRules();
     }
 
     /**
@@ -110,6 +141,14 @@ public class ConfigResolutionService {
      * @return FieldMappingConfig entity (ACTIVE status only)
      */
     public FieldMappingConfig resolveActiveFieldMappingConfig(String screenId, String productCode, String partnerCode, String branchCode) {
+        if (screenId == null || screenId.isBlank()) {
+            throw new IllegalArgumentException("screenId cannot be null or blank");
+        }
+        // Normalize empty strings to null for scope parameters
+        productCode = (productCode != null && productCode.isBlank()) ? null : productCode;
+        partnerCode = (partnerCode != null && partnerCode.isBlank()) ? null : partnerCode;
+        branchCode = (branchCode != null && branchCode.isBlank()) ? null : branchCode;
+        
         List<FieldMappingConfig> configs = fieldMappingConfigRepository.findByScope(screenId, productCode, partnerCode, branchCode);
         
         if (configs.isEmpty()) {
@@ -136,6 +175,14 @@ public class ConfigResolutionService {
      * @return FlowConfig entity (ACTIVE status only)
      */
     public FlowConfig resolveActiveFlowConfig(String flowId, String productCode, String partnerCode, String branchCode) {
+        if (flowId == null || flowId.isBlank()) {
+            throw new IllegalArgumentException("flowId cannot be null or blank");
+        }
+        // Normalize empty strings to null for scope parameters
+        productCode = (productCode != null && productCode.isBlank()) ? null : productCode;
+        partnerCode = (partnerCode != null && partnerCode.isBlank()) ? null : partnerCode;
+        branchCode = (branchCode != null && branchCode.isBlank()) ? null : branchCode;
+        
         List<FlowConfig> configs = flowConfigRepository.findByScope(flowId, productCode, partnerCode, branchCode);
         
         if (configs.isEmpty()) {

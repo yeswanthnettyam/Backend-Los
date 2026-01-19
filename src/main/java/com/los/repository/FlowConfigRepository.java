@@ -20,8 +20,9 @@ public interface FlowConfigRepository extends JpaRepository<FlowConfig, Long> {
             (fc.branchCode = :branchCode AND fc.partnerCode = :partnerCode AND fc.productCode = :productCode)
             OR (fc.branchCode IS NULL AND fc.partnerCode = :partnerCode AND fc.productCode = :productCode)
             OR (fc.branchCode IS NULL AND fc.partnerCode IS NULL AND fc.productCode = :productCode)
+            OR (fc.branchCode IS NULL AND fc.partnerCode IS NULL AND fc.productCode IS NULL)
         )
-        ORDER BY fc.branchCode DESC NULLS LAST, fc.partnerCode DESC NULLS LAST
+        ORDER BY fc.branchCode DESC NULLS LAST, fc.partnerCode DESC NULLS LAST, fc.productCode DESC NULLS LAST
         """)
     List<FlowConfig> findByScope(
         @Param("flowId") String flowId,
@@ -65,8 +66,9 @@ public interface FlowConfigRepository extends JpaRepository<FlowConfig, Long> {
             (fc.branchCode = :branchCode AND fc.partnerCode = :partnerCode AND fc.productCode = :productCode)
             OR (fc.branchCode IS NULL AND fc.partnerCode = :partnerCode AND fc.productCode = :productCode)
             OR (fc.branchCode IS NULL AND fc.partnerCode IS NULL AND fc.productCode = :productCode)
+            OR (fc.branchCode IS NULL AND fc.partnerCode IS NULL AND fc.productCode IS NULL)
         )
-        ORDER BY fc.flowId, fc.branchCode DESC NULLS LAST, fc.partnerCode DESC NULLS LAST
+        ORDER BY fc.flowId, fc.branchCode DESC NULLS LAST, fc.partnerCode DESC NULLS LAST, fc.productCode DESC NULLS LAST
         """)
     List<FlowConfig> findAllActiveByScope(
         @Param("productCode") String productCode,
