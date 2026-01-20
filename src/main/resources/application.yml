@@ -75,3 +75,13 @@ rate-limit:
   config:
     requests-per-minute: 60
 
+# File Upload Configuration
+file:
+  upload:
+    directory: ${user.dir}/data/uploads
+    max-size: 5242880  # 5MB in bytes
+    base-url: http://localhost:8080/api/v1/files
+    allowed-mime-types:
+      - image/jpeg
+      - image/jpg
+      - image/png

@@ -6,13 +6,16 @@ import com.los.dto.runtime.NextScreenResponse;
 import com.los.flow.FlowEngine;
 import com.los.mapping.FieldMappingEngine;
 import com.los.repository.*;
+import com.los.service.FileUploadService;
 import com.los.validation.ValidationEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -30,6 +33,7 @@ public class RuntimeOrchestrationService {
     private final FieldMappingEngine fieldMappingEngine;
     private final FlowEngine flowEngine;
     private final ConfigResolutionService configResolutionService;
+    private final FileUploadService fileUploadService;
 
     /**
      * Process screen submission and determine next screen.
@@ -110,12 +114,17 @@ public class RuntimeOrchestrationService {
         );
 
         // Step 1: Validate form data (skipped if validationConfig is null)
+        // WebView fields are automatically ignored by ValidationEngine
         if (validationConfig != null) {
             log.debug("Validating form data for screen: {}", request.getCurrentScreenId());
-            validationEngine.validate(formData, validationConfig);
+            validationEngine.validate(formData, validationConfig, request.getCurrentScreenId(), 
+                    application.getProductCode(), application.getPartnerCode(), application.getBranchCode());
         } else {
             log.debug("No validation config found for screen: {}. Skipping validation.", request.getCurrentScreenId());
         }
+
+        // Step 1.5: Validate required camera uploads
+        validateRequiredCameraUploads(application.getApplicationId(), request.getCurrentScreenId());
 
         // Step 2: Apply field mappings and persist
         log.debug("Applying field mappings");
@@ -228,6 +237,71 @@ public class RuntimeOrchestrationService {
                 .build();
 
         return loanApplicationRepository.save(application);
+    }
+
+    /**
+     * Validate that required camera fields are uploaded.
+     * Backend MUST re-check - do NOT trust frontend flags.
+     */
+    @SuppressWarnings("unchecked")
+    private void validateRequiredCameraUploads(Long applicationId, String screenId) {
+        log.debug("Validating required camera uploads for applicationId={}, screenId={}", 
+                applicationId, screenId);
+
+        // Get screen config to find camera fields
+        Map<String, Object> screenConfig = configResolutionService.getScreenConfig(
+                screenId, null, null, null);
+
+        if (screenConfig == null) {
+            log.warn("Screen config not found for screenId={}. Skipping camera validation.", screenId);
+            return;
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> uiConfig = (Map<String, Object>) screenConfig.get("uiConfig");
+        if (uiConfig == null) {
+            log.debug("uiConfig not found. No camera fields to validate.");
+            return;
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) uiConfig.get("fields");
+        if (fields == null || fields.isEmpty()) {
+            log.debug("No fields found. No camera fields to validate.");
+            return;
+        }
+
+        // Find required camera fields
+        List<String> requiredCameraFields = new ArrayList<>();
+        for (Map<String, Object> field : fields) {
+            String fieldType = (String) field.get("type");
+            Boolean required = (Boolean) field.get("required");
+            
+            // Check if field is CAMERA type and required
+            if ("CAMERA".equalsIgnoreCase(fieldType) && Boolean.TRUE.equals(required)) {
+                String fieldId = (String) field.get("id");
+                if (fieldId != null) {
+                    requiredCameraFields.add(fieldId);
+                }
+            }
+        }
+
+        // Validate that all required camera fields are uploaded
+        if (!requiredCameraFields.isEmpty()) {
+            boolean allUploaded = fileUploadService.areRequiredCameraFieldsUploaded(
+                    applicationId, screenId, requiredCameraFields);
+            
+            if (!allUploaded) {
+                log.error("Required camera fields not uploaded: applicationId={}, screenId={}, requiredFields={}", 
+                        applicationId, screenId, requiredCameraFields);
+                throw new RuntimeException("Required camera uploads are missing. Cannot proceed.");
+            }
+            
+            log.info("All required camera fields uploaded: applicationId={}, screenId={}, fields={}", 
+                    applicationId, screenId, requiredCameraFields);
+        } else {
+            log.debug("No required camera fields found for screenId={}", screenId);
+        }
     }
 }
 
