@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Unit tests for Aadhaar QR decode controller.
- * Tests backward compatibility with both qrPayloadBase64 and qrData fields.
+ * Tests validation and error handling.
  */
 @WebMvcTest(AadhaarQrDecodeController.class)
 class AadhaarQrDecodeControllerTest {
@@ -36,7 +36,7 @@ class AadhaarQrDecodeControllerTest {
     @MockBean
     private AadhaarQrDecodeService qrDecodeService;
 
-    private static final String VALID_BASE64 = "dGVzdHFycGF5bG9hZA=="; // "testqrpayload" in Base64
+    private static final String VALID_NUMERIC_PAYLOAD = "1".repeat(1001); // Minimum valid length (1001 digits)
     private static final String DECODED_NAME = "John Doe";
     private static final String DECODED_GENDER = "M";
     private static final String DECODED_DOB = "1990-01-15";
@@ -53,10 +53,10 @@ class AadhaarQrDecodeControllerTest {
     }
 
     @Test
-    void testDecodeWithQrPayloadBase64() throws Exception {
-        // Given: Request with qrPayloadBase64 field
+    void testDecodeWithValidPayload() throws Exception {
+        // Given: Request with valid numeric payload
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64(VALID_BASE64)
+                .qrPayload(VALID_NUMERIC_PAYLOAD)
                 .build();
 
         AadhaarQrDecodeResponse response = AadhaarQrDecodeResponse.builder()
@@ -66,7 +66,7 @@ class AadhaarQrDecodeControllerTest {
                 .aadhaarLast4(DECODED_AADHAAR_LAST4)
                 .build();
 
-        when(qrDecodeService.decodeAadhaarQr(VALID_BASE64)).thenReturn(response);
+        when(qrDecodeService.decodeAadhaarQr(VALID_NUMERIC_PAYLOAD)).thenReturn(response);
 
         // When & Then: Should decode successfully
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
@@ -80,131 +80,121 @@ class AadhaarQrDecodeControllerTest {
     }
 
     @Test
-    void testDecodeWithQrDataFallback() throws Exception {
-        // Given: Request with qrData field (backward compatibility)
+    void testDecodeWithMissingPayload() throws Exception {
+        // Given: Request with missing payload
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrData(VALID_BASE64)
                 .build();
 
-        AadhaarQrDecodeResponse response = AadhaarQrDecodeResponse.builder()
-                .name(DECODED_NAME)
-                .gender(DECODED_GENDER)
-                .dob(DECODED_DOB)
-                .aadhaarLast4(DECODED_AADHAAR_LAST4)
-                .build();
-
-        when(qrDecodeService.decodeAadhaarQr(VALID_BASE64)).thenReturn(response);
-
-        // When & Then: Should decode successfully using qrData
+        // When & Then: Should return 400 with validation error
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(DECODED_NAME))
-                .andExpect(jsonPath("$.gender").value(DECODED_GENDER))
-                .andExpect(jsonPath("$.dob").value(DECODED_DOB))
-                .andExpect(jsonPath("$.aadhaarLast4").value(DECODED_AADHAAR_LAST4));
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void testDecodeWithBothFields_PrefersQrPayloadBase64() throws Exception {
-        // Given: Request with both fields (should prefer qrPayloadBase64)
-        String primaryPayload = VALID_BASE64;
-        String fallbackPayload = "YWx0ZXJuYXRpdmU="; // "alternative" in Base64
-
+    void testDecodeWithEmptyPayload() throws Exception {
+        // Given: Request with empty payload
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64(primaryPayload)
-                .qrData(fallbackPayload)
+                .qrPayload("")
                 .build();
 
-        AadhaarQrDecodeResponse response = AadhaarQrDecodeResponse.builder()
-                .name(DECODED_NAME)
-                .gender(DECODED_GENDER)
-                .dob(DECODED_DOB)
-                .aadhaarLast4(DECODED_AADHAAR_LAST4)
-                .build();
-
-        when(qrDecodeService.decodeAadhaarQr(primaryPayload)).thenReturn(response);
-
-        // When & Then: Should use qrPayloadBase64 (primary field)
+        // When & Then: Should return 400 with validation error
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(DECODED_NAME));
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void testDecodeWithEmptyQrPayloadBase64_UsesQrData() throws Exception {
-        // Given: Request with empty qrPayloadBase64 but valid qrData
+    void testDecodeWithNonNumericPayload() throws Exception {
+        // Given: Request with non-numeric payload
+        String nonNumericPayload = "abc".repeat(400); // 1200 characters but not numeric
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("")
-                .qrData(VALID_BASE64)
+                .qrPayload(nonNumericPayload)
                 .build();
 
-        AadhaarQrDecodeResponse response = AadhaarQrDecodeResponse.builder()
-                .name(DECODED_NAME)
-                .gender(DECODED_GENDER)
-                .dob(DECODED_DOB)
-                .aadhaarLast4(DECODED_AADHAAR_LAST4)
-                .build();
-
-        when(qrDecodeService.decodeAadhaarQr(VALID_BASE64)).thenReturn(response);
-
-        // When & Then: Should use qrData as fallback
+        // When & Then: Should return 400 with validation error
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(DECODED_NAME));
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void testDecodeWithBothFieldsMissing() throws Exception {
-        // Given: Request with both fields missing
+    void testDecodeWithTooShortPayload() throws Exception {
+        // Given: Request with payload shorter than minimum (1001 characters)
+        String shortPayload = "1".repeat(1000); // 1000 digits (below minimum)
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
+                .qrPayload(shortPayload)
                 .build();
 
-        // When & Then: Should return 400 with error message
+        // When & Then: Should return 400 with validation error
+        mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void testDecodeWithServiceException() throws Exception {
+        // Given: Request with valid payload but service throws exception
+        AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
+                .qrPayload(VALID_NUMERIC_PAYLOAD)
+                .build();
+
+        when(qrDecodeService.decodeAadhaarQr(VALID_NUMERIC_PAYLOAD))
+                .thenThrow(new IllegalArgumentException("QR payload is required"));
+
+        // When & Then: Should return 400 with error response
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.message").value("QR payload Base64 is required"));
+                .andExpect(jsonPath("$.message").value("QR payload is required"));
     }
 
     @Test
-    void testDecodeWithBothFieldsEmpty() throws Exception {
-        // Given: Request with both fields empty
+    void testDecodeWithQrDecodeException() throws Exception {
+        // Given: Request with valid payload but QR decode fails
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("")
-                .qrData("")
+                .qrPayload(VALID_NUMERIC_PAYLOAD)
                 .build();
 
-        // When & Then: Should return 400 with error message
+        UidaiSecureQrDecoder.QrDecodeException decodeException = 
+                new UidaiSecureQrDecoder.QrDecodeException(
+                        "Invalid QR format", 
+                        UidaiSecureQrDecoder.QrDecodeErrorType.INVALID_FORMAT);
+
+        when(qrDecodeService.decodeAadhaarQr(VALID_NUMERIC_PAYLOAD))
+                .thenThrow(decodeException);
+
+        // When & Then: Should return 422 with error response
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.message").value("QR payload Base64 is required"));
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errorCode").value("QR_DECODE_FAILED"))
+                .andExpect(jsonPath("$.message").exists());
     }
 
     @Test
-    void testDecodeWithWhitespaceOnly() throws Exception {
-        // Given: Request with whitespace-only fields
+    void testDecodeWithUnexpectedException() throws Exception {
+        // Given: Request with valid payload but unexpected exception occurs
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("   ")
-                .qrData("   ")
+                .qrPayload(VALID_NUMERIC_PAYLOAD)
                 .build();
 
-        // When & Then: Should return 400 with error message
+        when(qrDecodeService.decodeAadhaarQr(VALID_NUMERIC_PAYLOAD))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // When & Then: Should return 500 with error response
         mockMvc.perform(post("/api/v1/qr/aadhaar/decode")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
-                .andExpect(jsonPath("$.message").value("QR payload Base64 is required"));
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.errorCode").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
     }
 }

@@ -27,12 +27,6 @@ import java.util.Map;
 
 /**
  * Service for activating configurations across all config types.
- * 
- * Ensures:
- * - Only ONE ACTIVE config per scope
- * - Atomic activation (deprecate old → activate new)
- * - Validation before activation
- * - Audit trail preservation
  */
 @Service
 @RequiredArgsConstructor
@@ -59,16 +53,11 @@ public class ConfigActivationService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ScreenConfig activateScreenConfig(Long configId) {
-        log.info("Activating ScreenConfig: {}", configId);
-        
-        // 1. Get config to activate
         ScreenConfig config = screenConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Screen config not found: " + configId));
         
-        // 2. Validate current status
         if (ConfigStatus.ACTIVE.name().equals(config.getStatus())) {
-            log.warn("Config {} is already ACTIVE", configId);
-            return config; // Idempotent
+            return config;
         }
         
         if (!ConfigStatus.DRAFT.name().equals(config.getStatus())) {
@@ -82,10 +71,8 @@ public class ConfigActivationService {
             ));
         }
         
-        // 3. Validate completeness
         validateScreenConfigCompleteness(config);
         
-        // 4. Find and deprecate previous ACTIVE config in same scope
         List<ScreenConfig> activeConfigs = screenConfigRepository.findByScreenIdAndProductCodeAndPartnerCodeAndBranchCodeAndStatus(
             config.getScreenId(),
             config.getProductCode(),
@@ -95,29 +82,22 @@ public class ConfigActivationService {
         );
         
         for (ScreenConfig activeConfig : activeConfigs) {
-            log.info("Deprecating previous ACTIVE ScreenConfig: {}", activeConfig.getConfigId());
             activeConfig.setStatus(ConfigStatus.DEPRECATED.name());
             screenConfigRepository.save(activeConfig);
         }
         
-        // 5. Activate new config
         config.setStatus(ConfigStatus.ACTIVE.name());
         
-        // CRITICAL: Also update status inside uiConfig JSON to match top-level status
-        // The frontend may read status from uiConfig, so we must keep them in sync
         Map<String, Object> uiConfig = config.getUiConfig();
         if (uiConfig != null) {
-            // Create a new HashMap to ensure Hibernate detects the change
             Map<String, Object> updatedUiConfig = new HashMap<>(uiConfig);
             updatedUiConfig.put("status", ConfigStatus.ACTIVE.name());
-            config.setUiConfig(updatedUiConfig); // Set it back to trigger converter
-            log.debug("Updated status inside uiConfig to ACTIVE and set back on entity");
+            config.setUiConfig(updatedUiConfig);
         }
         
-        ScreenConfig merged = entityManager.merge(config);
-        entityManager.flush(); // Force immediate database write
+        entityManager.merge(config);
+        entityManager.flush();
         
-        // Also update uiConfig JSON directly in database using SQL to ensure it's persisted
         if (uiConfig != null) {
             try {
                 ObjectMapper objectMapper = new ObjectMapper();
@@ -125,56 +105,29 @@ public class ConfigActivationService {
                 uiConfigForDb.put("status", ConfigStatus.ACTIVE.name());
                 String updatedJson = objectMapper.writeValueAsString(uiConfigForDb);
                 
-                // Update the JSON directly in database
-                int jsonUpdated = entityManager.createNativeQuery(
+                entityManager.createNativeQuery(
                         "UPDATE SCREEN_CONFIGS SET UI_CONFIG = ? WHERE CONFIG_ID = ?")
                         .setParameter(1, updatedJson)
                         .setParameter(2, configId)
                         .executeUpdate();
                 entityManager.flush();
-                log.debug("Direct SQL update of uiConfig JSON: {} rows updated", jsonUpdated);
             } catch (Exception e) {
-                log.error("Failed to update uiConfig JSON directly: {}", e.getMessage(), e);
+                log.error("Failed to update uiConfig JSON: {}", e.getMessage());
             }
         }
         
-        entityManager.clear(); // Clear persistence context
+        entityManager.clear();
         
-        // Fetch fresh entity from database
-        ScreenConfig freshConfig = screenConfigRepository.findById(configId)
+        return screenConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Screen config not found: " + configId));
-        
-        log.info("Successfully activated ScreenConfig: {} (deprecated {} previous configs). Status: {}", 
-            configId, activeConfigs.size(), freshConfig.getStatus());
-        
-        // Verify status inside uiConfig is also ACTIVE
-        Map<String, Object> freshUiConfig = freshConfig.getUiConfig();
-        if (freshUiConfig != null) {
-            Object statusInUiConfig = freshUiConfig.get("status");
-            if (!ConfigStatus.ACTIVE.name().equals(statusInUiConfig)) {
-                log.warn("WARNING: Status inside uiConfig is '{}' but should be 'ACTIVE'. Frontend may show incorrect status.", 
-                    statusInUiConfig);
-            } else {
-                log.debug("Verified: Status inside uiConfig is also ACTIVE");
-            }
-        }
-        
-        return freshConfig;
     }
 
-    /**
-     * Activate a FlowConfig.
-     * Uses REQUIRES_NEW to ensure transaction commits immediately.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public FlowConfig activateFlowConfig(Long configId) {
-        log.info("Activating FlowConfig: {}", configId);
-        
         FlowConfig config = flowConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Flow config not found: " + configId));
         
         if (ConfigStatus.ACTIVE.name().equals(config.getStatus())) {
-            log.warn("Config {} is already ACTIVE", configId);
             return config;
         }
         
@@ -200,35 +153,22 @@ public class ConfigActivationService {
         );
         
         for (FlowConfig activeConfig : activeConfigs) {
-            log.info("Deprecating previous ACTIVE FlowConfig: {}", activeConfig.getConfigId());
             activeConfig.setStatus(ConfigStatus.DEPRECATED.name());
             flowConfigRepository.save(activeConfig);
         }
         
-        log.debug("Setting status to ACTIVE for FlowConfig: {}", configId);
         config.setStatus(ConfigStatus.ACTIVE.name());
-        log.debug("Status set to: {}", config.getStatus());
         
-        // CRITICAL: Also update status inside flowDefinition JSON to match top-level status
-        // The frontend reads status from flowDefinition, so we must keep them in sync
-        // We need to create a new Map and set it back to trigger Hibernate's dirty checking
         Map<String, Object> flowDefinition = config.getFlowDefinition();
         if (flowDefinition != null) {
-            // Create a new HashMap to ensure Hibernate detects the change
             Map<String, Object> updatedFlowDefinition = new HashMap<>(flowDefinition);
             updatedFlowDefinition.put("status", ConfigStatus.ACTIVE.name());
-            config.setFlowDefinition(updatedFlowDefinition); // Set it back to trigger converter
-            log.debug("Updated status inside flowDefinition to ACTIVE and set back on entity");
+            config.setFlowDefinition(updatedFlowDefinition);
         }
         
-        // Use merge to ensure the entity is managed and changes are tracked
-        FlowConfig merged = entityManager.merge(config);
-        log.debug("After merge, status is: {}", merged.getStatus());
+        entityManager.merge(config);
+        entityManager.flush();
         
-        entityManager.flush(); // Force immediate database write
-        
-        // Also update flowDefinition JSON directly in database using SQL to ensure it's persisted
-        // This is a fallback to ensure the JSON is definitely updated even if Hibernate doesn't detect the change
         if (flowDefinition != null) {
             try {
                 ObjectMapper objectMapper = new ObjectMapper();
@@ -236,83 +176,29 @@ public class ConfigActivationService {
                 flowDefForDb.put("status", ConfigStatus.ACTIVE.name());
                 String updatedJson = objectMapper.writeValueAsString(flowDefForDb);
                 
-                // Update the JSON directly in database
-                int jsonUpdated = entityManager.createNativeQuery(
+                entityManager.createNativeQuery(
                         "UPDATE FLOW_CONFIGS SET FLOW_DEFINITION = ? WHERE CONFIG_ID = ?")
                         .setParameter(1, updatedJson)
                         .setParameter(2, configId)
                         .executeUpdate();
                 entityManager.flush();
-                log.debug("Direct SQL update of flowDefinition JSON: {} rows updated", jsonUpdated);
             } catch (Exception e) {
-                log.error("Failed to update flowDefinition JSON directly: {}", e.getMessage(), e);
+                log.error("Failed to update flowDefinition JSON: {}", e.getMessage());
             }
         }
         
-        // Verify with direct SQL query to ensure database was updated
-        // H2 uses uppercase table names in MySQL mode
-        String statusFromDb = (String) entityManager.createNativeQuery(
-                "SELECT STATUS FROM FLOW_CONFIGS WHERE CONFIG_ID = ?")
-                .setParameter(1, configId)
-                .getSingleResult();
-        log.debug("Direct SQL query confirms status in DB: {}", statusFromDb);
-        
-        if (!ConfigStatus.ACTIVE.name().equals(statusFromDb)) {
-            log.error("CRITICAL: Database status mismatch! Expected ACTIVE but DB has: {}. Attempting direct update.", statusFromDb);
-            // Force direct SQL update as fallback
-            int updated = entityManager.createNativeQuery(
-                    "UPDATE FLOW_CONFIGS SET STATUS = ? WHERE CONFIG_ID = ?")
-                    .setParameter(1, ConfigStatus.ACTIVE.name())
-                    .setParameter(2, configId)
-                    .executeUpdate();
-            entityManager.flush();
-            log.warn("Forced direct SQL update to ACTIVE for config {} ({} rows updated)", configId, updated);
-        }
-        
-        // Clear persistence context to force fresh fetch from database
         entityManager.clear();
         
-        // Fetch fresh entity from database to ensure we return the latest committed state
-        // This bypasses any Hibernate first-level cache issues
-        FlowConfig freshConfig = flowConfigRepository.findById(configId)
+        return flowConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Flow config not found: " + configId));
-        
-        log.info("Successfully activated FlowConfig: {} (deprecated {} previous configs). Status from DB: {}", 
-            configId, activeConfigs.size(), freshConfig.getStatus());
-        
-        if (!ConfigStatus.ACTIVE.name().equals(freshConfig.getStatus())) {
-            log.error("CRITICAL: Status mismatch after fresh fetch! Expected ACTIVE but got: {}. Config ID: {}", 
-                freshConfig.getStatus(), configId);
-        }
-        
-        // Verify status inside flowDefinition is also ACTIVE
-        Map<String, Object> freshFlowDefinition = freshConfig.getFlowDefinition();
-        if (freshFlowDefinition != null) {
-            Object statusInFlowDef = freshFlowDefinition.get("status");
-            if (!ConfigStatus.ACTIVE.name().equals(statusInFlowDef)) {
-                log.warn("WARNING: Status inside flowDefinition is '{}' but should be 'ACTIVE'. Frontend may show incorrect status.", 
-                    statusInFlowDef);
-            } else {
-                log.debug("Verified: Status inside flowDefinition is also ACTIVE");
-            }
-        }
-        
-        return freshConfig;
     }
 
-    /**
-     * Activate a FieldMappingConfig.
-     * Uses REQUIRES_NEW to ensure transaction commits immediately.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public FieldMappingConfig activateFieldMappingConfig(Long configId) {
-        log.info("Activating FieldMappingConfig: {}", configId);
-        
         FieldMappingConfig config = fieldMappingConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Field mapping config not found: " + configId));
         
         if (ConfigStatus.ACTIVE.name().equals(config.getStatus())) {
-            log.warn("Config {} is already ACTIVE", configId);
             return config;
         }
         
@@ -338,28 +224,22 @@ public class ConfigActivationService {
         );
         
         for (FieldMappingConfig activeConfig : activeConfigs) {
-            log.info("Deprecating previous ACTIVE FieldMappingConfig: {}", activeConfig.getConfigId());
             activeConfig.setStatus(ConfigStatus.DEPRECATED.name());
             fieldMappingConfigRepository.save(activeConfig);
         }
         
         config.setStatus(ConfigStatus.ACTIVE.name());
         
-        // CRITICAL: Also update status inside mappings JSON to match top-level status
-        // The frontend may read status from mappings, so we must keep them in sync
         Map<String, Object> mappings = config.getMappings();
         if (mappings != null) {
-            // Create a new HashMap to ensure Hibernate detects the change
             Map<String, Object> updatedMappings = new HashMap<>(mappings);
             updatedMappings.put("status", ConfigStatus.ACTIVE.name());
-            config.setMappings(updatedMappings); // Set it back to trigger converter
-            log.debug("Updated status inside mappings to ACTIVE and set back on entity");
+            config.setMappings(updatedMappings);
         }
         
-        FieldMappingConfig merged = entityManager.merge(config);
-        entityManager.flush(); // Force immediate database write
+        entityManager.merge(config);
+        entityManager.flush();
         
-        // Also update mappings JSON directly in database using SQL to ensure it's persisted
         if (mappings != null) {
             try {
                 ObjectMapper objectMapper = new ObjectMapper();
@@ -367,46 +247,23 @@ public class ConfigActivationService {
                 mappingsForDb.put("status", ConfigStatus.ACTIVE.name());
                 String updatedJson = objectMapper.writeValueAsString(mappingsForDb);
                 
-                // Update the JSON directly in database
-                int jsonUpdated = entityManager.createNativeQuery(
+                entityManager.createNativeQuery(
                         "UPDATE FIELD_MAPPING_CONFIGS SET MAPPINGS = ? WHERE CONFIG_ID = ?")
                         .setParameter(1, updatedJson)
                         .setParameter(2, configId)
                         .executeUpdate();
                 entityManager.flush();
-                log.debug("Direct SQL update of mappings JSON: {} rows updated", jsonUpdated);
             } catch (Exception e) {
-                log.error("Failed to update mappings JSON directly: {}", e.getMessage(), e);
+                log.error("Failed to update mappings JSON: {}", e.getMessage());
             }
         }
         
-        entityManager.clear(); // Clear persistence context
+        entityManager.clear();
         
-        // Fetch fresh entity from database
-        FieldMappingConfig freshConfig = fieldMappingConfigRepository.findById(configId)
+        return fieldMappingConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Field mapping config not found: " + configId));
-        
-        log.info("Successfully activated FieldMappingConfig: {} (deprecated {} previous configs). Status: {}", 
-            configId, activeConfigs.size(), freshConfig.getStatus());
-        
-        // Verify status inside mappings is also ACTIVE
-        Map<String, Object> freshMappings = freshConfig.getMappings();
-        if (freshMappings != null) {
-            Object statusInMappings = freshMappings.get("status");
-            if (!ConfigStatus.ACTIVE.name().equals(statusInMappings)) {
-                log.warn("WARNING: Status inside mappings is '{}' but should be 'ACTIVE'. Frontend may show incorrect status.", 
-                    statusInMappings);
-            } else {
-                log.debug("Verified: Status inside mappings is also ACTIVE");
-            }
-        }
-        
-        return freshConfig;
     }
 
-    /**
-     * Validate ScreenConfig completeness before activation.
-     */
     private void validateScreenConfigCompleteness(ScreenConfig config) {
         if (config.getScreenId() == null || config.getScreenId().isBlank()) {
             throw new ValidationException(Collections.singletonList(
@@ -426,12 +283,8 @@ public class ConfigActivationService {
                     .build()
             ));
         }
-        // Add more validation rules as needed
     }
 
-    /**
-     * Validate FlowConfig completeness before activation.
-     */
     private void validateFlowConfigCompleteness(FlowConfig config) {
         if (config.getFlowId() == null || config.getFlowId().isBlank()) {
             throw new ValidationException(Collections.singletonList(
@@ -451,12 +304,8 @@ public class ConfigActivationService {
                     .build()
             ));
         }
-        // Add more validation rules as needed
     }
 
-    /**
-     * Validate FieldMappingConfig completeness before activation.
-     */
     private void validateFieldMappingConfigCompleteness(FieldMappingConfig config) {
         if (config.getScreenId() == null || config.getScreenId().isBlank()) {
             throw new ValidationException(Collections.singletonList(
@@ -476,22 +325,14 @@ public class ConfigActivationService {
                     .build()
             ));
         }
-        // Add more validation rules as needed
     }
 
-    /**
-     * Activate a ValidationConfig.
-     * Uses REQUIRES_NEW to ensure transaction commits immediately.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ValidationConfig activateValidationConfig(Long configId) {
-        log.info("Activating ValidationConfig: {}", configId);
-        
         ValidationConfig config = validationConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Validation config not found: " + configId));
         
         if (ConfigStatus.ACTIVE.name().equals(config.getStatus())) {
-            log.warn("Config {} is already ACTIVE", configId);
             return config;
         }
         
@@ -517,28 +358,22 @@ public class ConfigActivationService {
         );
         
         for (ValidationConfig activeConfig : activeConfigs) {
-            log.info("Deprecating previous ACTIVE ValidationConfig: {}", activeConfig.getConfigId());
             activeConfig.setStatus(ConfigStatus.DEPRECATED.name());
             validationConfigRepository.save(activeConfig);
         }
         
         config.setStatus(ConfigStatus.ACTIVE.name());
         
-        // CRITICAL: Also update status inside validationRules JSON to match top-level status
-        // The frontend may read status from validationRules, so we must keep them in sync
         Map<String, Object> validationRules = config.getValidationRules();
         if (validationRules != null) {
-            // Create a new HashMap to ensure Hibernate detects the change
             Map<String, Object> updatedValidationRules = new HashMap<>(validationRules);
             updatedValidationRules.put("status", ConfigStatus.ACTIVE.name());
-            config.setValidationRules(updatedValidationRules); // Set it back to trigger converter
-            log.debug("Updated status inside validationRules to ACTIVE and set back on entity");
+            config.setValidationRules(updatedValidationRules);
         }
         
-        ValidationConfig merged = entityManager.merge(config);
-        entityManager.flush(); // Force immediate database write
+        entityManager.merge(config);
+        entityManager.flush();
         
-        // Also update validationRules JSON directly in database using SQL to ensure it's persisted
         if (validationRules != null) {
             try {
                 ObjectMapper objectMapper = new ObjectMapper();
@@ -546,41 +381,21 @@ public class ConfigActivationService {
                 validationRulesForDb.put("status", ConfigStatus.ACTIVE.name());
                 String updatedJson = objectMapper.writeValueAsString(validationRulesForDb);
                 
-                // Update the JSON directly in database
-                int jsonUpdated = entityManager.createNativeQuery(
+                entityManager.createNativeQuery(
                         "UPDATE VALIDATION_CONFIGS SET VALIDATION_RULES = ? WHERE CONFIG_ID = ?")
                         .setParameter(1, updatedJson)
                         .setParameter(2, configId)
                         .executeUpdate();
                 entityManager.flush();
-                log.debug("Direct SQL update of validationRules JSON: {} rows updated", jsonUpdated);
             } catch (Exception e) {
-                log.error("Failed to update validationRules JSON directly: {}", e.getMessage(), e);
+                log.error("Failed to update validationRules JSON: {}", e.getMessage());
             }
         }
         
-        entityManager.clear(); // Clear persistence context
+        entityManager.clear();
         
-        // Fetch fresh entity from database
-        ValidationConfig freshConfig = validationConfigRepository.findById(configId)
+        return validationConfigRepository.findById(configId)
                 .orElseThrow(() -> new ConfigNotFoundException("Validation config not found: " + configId));
-        
-        log.info("Successfully activated ValidationConfig: {} (deprecated {} previous configs). Status: {}", 
-            configId, activeConfigs.size(), freshConfig.getStatus());
-        
-        // Verify status inside validationRules is also ACTIVE
-        Map<String, Object> freshValidationRules = freshConfig.getValidationRules();
-        if (freshValidationRules != null) {
-            Object statusInValidationRules = freshValidationRules.get("status");
-            if (!ConfigStatus.ACTIVE.name().equals(statusInValidationRules)) {
-                log.warn("WARNING: Status inside validationRules is '{}' but should be 'ACTIVE'. Frontend may show incorrect status.", 
-                    statusInValidationRules);
-            } else {
-                log.debug("Verified: Status inside validationRules is also ACTIVE");
-            }
-        }
-        
-        return freshConfig;
     }
 
     /**
@@ -605,6 +420,5 @@ public class ConfigActivationService {
                     .build()
             ));
         }
-        // Add more validation rules as needed
     }
 }

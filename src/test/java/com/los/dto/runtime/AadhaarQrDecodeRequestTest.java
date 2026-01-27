@@ -6,127 +6,100 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for AadhaarQrDecodeRequest DTO.
- * Tests backward compatibility logic for qrPayloadBase64 and qrData fields.
+ * Tests validation and basic functionality.
  */
 class AadhaarQrDecodeRequestTest {
 
+    private static final String VALID_NUMERIC_PAYLOAD = "1".repeat(1001); // Minimum valid length
+
     @Test
-    void testGetQrPayload_PrefersQrPayloadBase64() {
-        // Given: Both fields present
+    void testGetQrPayload_ReturnsValue() {
+        // Given: Valid payload
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("primary")
-                .qrData("fallback")
+                .qrPayload(VALID_NUMERIC_PAYLOAD)
                 .build();
 
-        // When & Then: Should return primary field
-        assertEquals("primary", request.getQrPayload());
-        assertEquals("qrPayloadBase64", request.getUsedFieldName());
+        // When & Then: Should return the payload
+        assertEquals(VALID_NUMERIC_PAYLOAD, request.getQrPayload());
     }
 
     @Test
-    void testGetQrPayload_UsesQrDataWhenPrimaryMissing() {
-        // Given: Only qrData present
-        AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrData("fallback")
-                .build();
-
-        // When & Then: Should return fallback field
-        assertEquals("fallback", request.getQrPayload());
-        assertEquals("qrData", request.getUsedFieldName());
-    }
-
-    @Test
-    void testGetQrPayload_UsesQrDataWhenPrimaryEmpty() {
-        // Given: Primary empty, fallback present
-        AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("")
-                .qrData("fallback")
-                .build();
-
-        // When & Then: Should return fallback field
-        assertEquals("fallback", request.getQrPayload());
-        assertEquals("qrData", request.getUsedFieldName());
-    }
-
-    @Test
-    void testGetQrPayload_TrimsWhitespace() {
-        // Given: Fields with whitespace
-        AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("  payload  ")
-                .build();
-
-        // When & Then: Should return trimmed value
-        assertEquals("payload", request.getQrPayload());
-    }
-
-    @Test
-    void testHasQrPayload_ReturnsTrueWhenPresent() {
-        // Given: QR payload present
-        AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("payload")
-                .build();
-
-        // When & Then: Should return true
-        assertTrue(request.hasQrPayload());
-    }
-
-    @Test
-    void testHasQrPayload_ReturnsFalseWhenBothMissing() {
-        // Given: Both fields missing
+    void testGetQrPayload_ReturnsNullWhenNotSet() {
+        // Given: Payload not set
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
                 .build();
 
-        // When & Then: Should return false
-        assertFalse(request.hasQrPayload());
+        // When & Then: Should return null
         assertNull(request.getQrPayload());
-        assertNull(request.getUsedFieldName());
     }
 
     @Test
-    void testHasQrPayload_ReturnsFalseWhenBothEmpty() {
-        // Given: Both fields empty
+    void testGetQrPayload_ReturnsEmptyWhenSetToEmpty() {
+        // Given: Empty payload
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("")
-                .qrData("")
+                .qrPayload("")
                 .build();
 
-        // When & Then: Should return false
-        assertFalse(request.hasQrPayload());
-        assertNull(request.getQrPayload());
-        assertNull(request.getUsedFieldName());
+        // When & Then: Should return empty string
+        assertEquals("", request.getQrPayload());
     }
 
     @Test
-    void testHasQrPayload_ReturnsFalseWhenBothWhitespace() {
-        // Given: Both fields whitespace-only
+    void testBuilder_CanSetQrPayload() {
+        // Given: Builder with payload
+        String payload = VALID_NUMERIC_PAYLOAD;
+        
+        // When: Building request
         AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("   ")
-                .qrData("   ")
+                .qrPayload(payload)
                 .build();
 
-        // When & Then: Should return false
-        assertFalse(request.hasQrPayload());
-        assertNull(request.getQrPayload());
-        assertNull(request.getUsedFieldName());
+        // Then: Should have the payload
+        assertEquals(payload, request.getQrPayload());
     }
 
     @Test
-    void testGetUsedFieldName_ReturnsCorrectField() {
-        // Test primary field
-        AadhaarQrDecodeRequest request1 = AadhaarQrDecodeRequest.builder()
-                .qrPayloadBase64("payload")
+    void testBuilder_CanBuildEmptyRequest() {
+        // Given: Builder without payload
+        // When: Building request
+        AadhaarQrDecodeRequest request = AadhaarQrDecodeRequest.builder()
                 .build();
-        assertEquals("qrPayloadBase64", request1.getUsedFieldName());
 
-        // Test fallback field
-        AadhaarQrDecodeRequest request2 = AadhaarQrDecodeRequest.builder()
-                .qrData("payload")
-                .build();
-        assertEquals("qrData", request2.getUsedFieldName());
+        // Then: Should have null payload
+        assertNull(request.getQrPayload());
+    }
 
-        // Test both missing
-        AadhaarQrDecodeRequest request3 = AadhaarQrDecodeRequest.builder()
-                .build();
-        assertNull(request3.getUsedFieldName());
+    @Test
+    void testAllArgsConstructor() {
+        // Given: Payload value
+        String payload = VALID_NUMERIC_PAYLOAD;
+        
+        // When: Using all args constructor
+        AadhaarQrDecodeRequest request = new AadhaarQrDecodeRequest(payload);
+
+        // Then: Should have the payload
+        assertEquals(payload, request.getQrPayload());
+    }
+
+    @Test
+    void testNoArgsConstructor() {
+        // When: Using no args constructor
+        AadhaarQrDecodeRequest request = new AadhaarQrDecodeRequest();
+
+        // Then: Should have null payload
+        assertNull(request.getQrPayload());
+    }
+
+    @Test
+    void testSetter() {
+        // Given: Request object
+        AadhaarQrDecodeRequest request = new AadhaarQrDecodeRequest();
+        String payload = VALID_NUMERIC_PAYLOAD;
+
+        // When: Setting payload
+        request.setQrPayload(payload);
+
+        // Then: Should have the payload
+        assertEquals(payload, request.getQrPayload());
     }
 }
